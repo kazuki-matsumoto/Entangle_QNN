@@ -15,14 +15,16 @@ from qiskit_machine_learning.neural_networks import SamplerQNN
 from qiskit.circuit import ParameterVector
 from qiskit.utils import algorithm_globals
 from qiskit.algorithms.optimizers import COBYLA, ADAM
+import matplotlib.pyplot as plt
 
 NUM_CLASS = 4
 NUM_FEATCHERS = 4
-DATA_SIZE = 40
+DATA_SIZE = 100
 N_PARAMS = 12*3 + 12*4
-MAX_ITER = 500
+MAX_ITER = 200
 N_EPOCH = 10
 N_QUBITS = 12
+LEARNING_RATE = 0.001
 
 OPTIM_STEPS = 100
 
@@ -79,7 +81,7 @@ def state_phase(y):
 
 # 位相推定アルゴリズム
 class QPE:
-    def __init__(self) -> None:
+    def __init__(self):
         # 第1レジスタのビット数
         self.N_ENCODE = 10
         # 第2レジスタのビット数
@@ -88,7 +90,7 @@ class QPE:
         self.N_QUBITS = self.N_ENCODE + self.N_EIGEN_STATE
         
         self.simulator = AerSimulator(device='GPU')
-        self.nshots = 100000
+        self.nshots = 10000
     
     # 逆フーリエ変換
     def inverse_qft(self, n):
@@ -163,7 +165,7 @@ class QPE:
 
 # メインの量子回路
 class SwapQNN:
-    def __init__(self, nqubits, simulator, nshots, state_phase, X_train: list, y_train: int) -> None:
+    def __init__(self, nqubits, simulator, nshots, X_train: list, y_train: int, state_phase=None):
         self.nqubits_train = nqubits
         self.simulator = simulator
         self.nshots = nshots
@@ -172,9 +174,9 @@ class SwapQNN:
         self.x_train = X_train
         self.y_train = y_train
         
-        self.state_phase = state_phase
-        
         self.weights = ParameterVector('weight', self.n_params)
+        
+        # self.state_phase = state_phase
         
     def U_in(self, X, y):
         qr = QuantumRegister(self.nqubits_train, 'qr')
@@ -208,7 +210,7 @@ class SwapQNN:
     def U_out(self, qc, qr):
         
         qc.append(self.grover(), [qr[i] for i in range(5)])
-        # qc.append(self.classify_rot_gate(n_qubits=9, state_phase=self.state_phase), [qr[i] for i in range(2, self.nqubits_train-1)])
+        # qc.append(self.classify_rot_gate(n_qubits=4, state_phase=self.state_phase), [qr[i] for i in [5, 6, 9, 10]])
         qc.append(self.max_entanglement_gate(), [qr[i] for i in range(7, self.nqubits_train-1)])
         qc.append(self.parametarized_qcl(), [qr[i] for i in range(2, 7)])
         
@@ -306,14 +308,14 @@ class SwapQNN:
         
         return inst_rot
 
-    def paramed_ent_gate(self, qc, id_qubit, skip_id1, skip_id2):
+    def add_paramed_ent_gate(self, qc, id_qubit, skip_id1, skip_id2):
         qc.u(self.weights[id_qubit*12], self.weights[id_qubit*12+1], self.weights[id_qubit*12+2], id_qubit + skip_id1)
         qc.u(self.weights[id_qubit*12+3], self.weights[id_qubit*12+4], self.weights[id_qubit*12+5], id_qubit + skip_id2)
         qc.cx(id_qubit + skip_id1, id_qubit + skip_id2)
         qc.u(self.weights[id_qubit*12+6], self.weights[id_qubit*12+7], self.weights[id_qubit*12+8], id_qubit + skip_id1)
         qc.u(self.weights[id_qubit*12+9], self.weights[id_qubit*12+10], self.weights[id_qubit*12+11], id_qubit + skip_id2)
 
-    def paramed_gate(self, qc, id_qubit, skip_id):
+    def add_paramed_gate(self, qc, id_qubit, skip_id):
         qc.u(self.weights[id_qubit*12 + 12*3], self.weights[id_qubit*12+1 + 12*3], self.weights[id_qubit*12+2 + 12*3], id_qubit + skip_id)
         qc.u(self.weights[id_qubit*12+3 + 12*3], self.weights[id_qubit*12+4 + 12*3], self.weights[id_qubit*12+5 + 12*3], id_qubit + skip_id)
         qc.u(self.weights[id_qubit*12+6 + 12*3], self.weights[id_qubit*12+7 + 12*3], self.weights[id_qubit*12+8 + 12*3], id_qubit + skip_id)
@@ -330,19 +332,19 @@ class SwapQNN:
         for id_qubit in range(n_qubits-2):
             
             if id_qubit == 1:
-                self.paramed_ent_gate(para_ent_qc, id_qubit, 0, 2)
+                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 2)
             elif id_qubit == 2:
-                self.paramed_ent_gate(para_ent_qc, id_qubit, 1, 2)      
+                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 1, 2)      
             else:
-                self.paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
+                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
                 
             para_ent_qc.barrier()
         
         for id_qubit in range(n_qubits-1):
             if id_qubit < 2:
-                self.paramed_gate(para_ent_qc, id_qubit, 0)
+                self.add_paramed_gate(para_ent_qc, id_qubit, 0)
             else:
-                self.paramed_gate(para_ent_qc, id_qubit, 1)
+                self.add_paramed_gate(para_ent_qc, id_qubit, 1)
 
         # print(para_ent_qc)
         inst_paramed_gate = para_ent_qc.to_instruction()
@@ -370,22 +372,42 @@ class SwapQNN:
 
         # 測定
         qnn = self.qcl_pred(self.x_train, self.y_train)
-        probabilities = qnn.forward(input_data=None, weights=weights)
+        probabilities = qnn.forward(input_data=None, weights=weights)        
         
         # コスト関数
         LOSS = np.sum(probabilities[:, 1])
-        print("LOSS", LOSS)
+        # print("LOSS", LOSS)
         return LOSS
-
-    # 初期の重み
-    def initial_weights(self):
-        initial_weights = 0.1 * (2 * algorithm_globals.random.random(self.n_params) - 1)
-        return initial_weights
+    
+    # 勾配計算
+    def calc_gradient(self, params):
+        grad = np.zeros_like(params)
+        for i in range(len(params)):
+            shifted = params.copy()
+            shifted[i] += np.pi/2
+            forward = self.cost_func(shifted)
+            
+            shifted[i] -= np.pi
+            backward = self.cost_func(shifted)
+            
+            grad[i] = 0.5 * (forward - backward)
+        
+        return np.round(grad, 10)
+            
     
     # 最適化計算
-    def minimization(self, initial_weights: list):
-        theta_opt = optimize(self.cost_func, initial_weights)
+    def minimization(self, weights: list):
+        theta_opt = optimize(self.cost_func, weights)
         return theta_opt
+    
+    # パラメータ更新
+    def update_weights(self, weights):
+        grad = self.calc_gradient(weights)
+        # print("grad", grad)
+        updated_weights = weights - grad
+        
+        return updated_weights
+        
     
     def predict(self, X_test, optimed_weight):
         innerproducts = np.array([])
@@ -399,7 +421,6 @@ class SwapQNN:
         
         return np.argmax(innerproducts) + 1
 
-
     def accuracy(self, X_test, y_test, optimed_weight):
         pred_dict = {}
         y_pred = np.array([])
@@ -407,7 +428,7 @@ class SwapQNN:
         for x, y in zip(X_test, y_test):
             predicted = self.predict(X_test=x, optimed_weight=optimed_weight)
             y_pred = np.append(y_pred, predicted)
-            pred_dict['ans{0} : {1}'.format(count, y)] = "pred{0} : {1}".format(count, predicted)
+            pred_dict['ans{0} is {1}'.format(count, y)] = "pred{0} is {1}".format(count, predicted)
             
             count += 1
         
@@ -418,7 +439,56 @@ class SwapQNN:
         
         accuracy = accuracy_score(y_test, y_pred)
         
+        graph_accuracy(accuracy, title="Accuracy value against iteration")
+        
         return accuracy
+
+def graph_loss(loss, y, title):
+    fig1, ax1 = plt.subplots()
+    loss_func_vals.append(loss)
+    y_list.append(y)
+    loss_point_list = [y_list, loss_func_vals]
+    
+    ax1.set_title(title)
+    ax1.set_xlabel("Iteration")
+    ax1.set_ylabel("LOSS value")
+    ax1.plot(range(len(loss_func_vals)), loss_func_vals)
+    
+    cnt_1 = 0
+    cnt_2 = 0
+    cnt_3 = 0
+    cnt_4 = 0
+    
+    for (i, point), y in zip(enumerate(loss_point_list[-1]), y_list):
+        if y == 1:
+            ax1.plot(i, point, '.', markersize=10, color='red', label='y={0}'.format(y) if cnt_1==0 else "")
+            cnt_1 += 1
+        if y == 2:
+            ax1.plot(i, point, '.', markersize=10, color='blue', label='y={0}'.format(y) if cnt_2==0 else "")
+            cnt_2 += 1
+        if y == 3:
+            ax1.plot(i, point, '.', markersize=10, color='green', label='y={0}'.format(y) if cnt_3==0 else "")
+            cnt_3 += 1
+        if y == 4:
+            ax1.plot(i, point, '.', markersize=10, color='yellow', label='y={0}'.format(y) if cnt_4==0 else "")
+            cnt_4 += 1
+            
+    
+    ax1.legend()
+    
+    plt.savefig(FIG_NAME_LOSS)
+    plt.close()
+
+def graph_accuracy(accuracy, title):
+    fig2, ax2 = plt.subplots()
+    accuracy_vals.append(accuracy)
+    ax2.set_title(title)
+    ax2.set_xlabel("Iteration")
+    ax2.set_ylabel("Accuracy value")
+    ax2.plot(range(len(accuracy_vals)), accuracy_vals)
+    plt.savefig(FIG_NAME_ACCURACY)
+    plt.close()
+    
     
 
 def save_file_at_dir(dir_path, filename, dataframe):
@@ -431,64 +501,56 @@ if __name__ == "__main__":
     # num shots
     nshots = 100000
     
-    df_dict = {}
-    df = datasets(NUM_CLASS, NUM_FEATCHERS, DATA_SIZE)
-    y = df["target"].values
-    X = df.drop('target', axis=1).values
+    loss_func_vals = []
+    accuracy_vals = []
     
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=1
-    )
+    loss_point = []
+    y_list = []
     
-    # 学習
-    for epoch in range(N_EPOCH):
-        print("epoch : ", epoch+1)
-        # df_theta_opt = pd.DataFrame(data=theta_opt.reshape(1, -1), columns=["{0}th_theta".format(i+1) for i in range(N_PARAMS)])
-        # df_accuracy = pd.DataFrame()
+    FIG_NAME_LOSS = 'fig_v2/graph_loss.jpeg'
+    FIG_NAME_ACCURACY = 'fig_v2/graph_accuracy.jpeg'
+    
+    if NUM_CLASS <= 4:
         
+        df_dict = {}
+        df = datasets(NUM_CLASS, NUM_FEATCHERS, DATA_SIZE)
+        y = df["target"].values
+        X = df.drop('target', axis=1).values
         
-        # ここでxとyをくっつけてシャッフル
-        # モデルを先に定義しておいて後で、xとyを入力
-        # SamplerQNNをモデルの外で定義する
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, random_state=1
+        )
         
+        initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
+        optimized_weight = initial_weights
         
-        for x, y in zip(X_train, y_train):      
-            phase = state_phase(y-1)
-            print("x", x)
-            print('y', y)
-            print("phase", phase)
-            qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, state_phase=phase, X_train=x, y_train=y-1)
-            initial_theta = qc.initial_weights()
+        # 学習
+        for epoch in range(N_EPOCH):
+            print("epoch : ", epoch+1)
+            print("--------------------------------------------------------------------------------")
 
-            # 最適化
-            optimed_weight = qc.minimization(initial_theta)
-            # row, col = df_theta_opt.shape
-            # df_theta_opt.loc[row] = theta_opt
+            # ここでxとyをくっつけてシャッフル
+            # モデルを先に定義しておいて後で、xとyを入力
+            # SamplerQNNをモデルの外で定義する
             
-            # 推論
-            predicted_accuracy = qc.accuracy(X_test, y_test, optimed_weight)
-            # accuracy_series = pd.Series([accuracy_])
-            # df_accuracy = pd.concat([df_accuracy, accuracy_series])
-            # df_accuracy = df_accuracy.reset_index(drop=True)            
-        
-        # ファイル出力
-        # save_file_at_dir('weights/', '{0}th_epoch.csv'.format(epoch+1), df_theta_opt)
-        # save_file_at_dir('accuracy/', '{0}th_epoch.csv'.format(epoch+1), df_accuracy)
-        
-        
+            for x, y in zip(X_train, y_train):      
+                # phase = state_phase(y-1)
+                print("x", x)
+                print('y', y)
+                # print('phase', phase)
+                
+                
+                qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y-1)
+                
+                # 最適化
+                # optimized_weight = qc.minimization(optimized_weight)
+                optimized_weight = qc.update_weights(optimized_weight)
+                
+                print("LOSS", qc.cost_func(optimized_weight))
+                graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
+                
+                # print("gradients",qc.calc_gradient(optimized_weight))
+                
+                # 推論
+                predicted_accuracy = qc.accuracy(X_test, y_test, optimized_weight)
     
-    # # 推論
-    # pred_dict = {}
-    # y_pred = []
-    # count = 0
-    # for x, y in zip(X_test, y_test):
-    #     phase_test = state_phase(y)
-    #     qc_pred = SwapQNN_pred(simulator=simulator, n_qubits=4)
-    #     predicted = qc_pred.predict(X_test=x, theta_opt=theta_opt)
-    #     y_pred.append(predicted)
-    #     pred_dict['ans{0} : {1}'.format(count, y)] = "pred{0} : {1}".format(count, predicted)
-        
-    #     count += 1
-        
-    # print("pred_dict :", pred_dict)
-    # print("accuracy_score :", accuracy_score(y_test, y_pred))

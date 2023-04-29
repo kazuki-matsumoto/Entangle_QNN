@@ -1,0 +1,5 @@
+GPUの利用状況の確認
+cluster-smi -p
+
+GPUを指定してプログラムの実行
+CUDA_VISIBLE_DEVICES=3,4,5,6,7 python main.py

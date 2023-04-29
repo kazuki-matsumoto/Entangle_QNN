@@ -14,13 +14,14 @@ import os
 from qiskit_machine_learning.neural_networks import SamplerQNN
 from qiskit.circuit import ParameterVector, Parameter
 from qiskit.utils import algorithm_globals
-from qiskit.algorithms.optimizers import COBYLA
+from qiskit.algorithms.optimizers import COBYLA, ADAM, NELDER_MEAD
 
 NUM_CLASS = 4
 NUM_FEATCHERS = 4
 DATA_SIZE = 40
 N_PARAMS = 12*3 + 12*4
-MAX_ITER = 500
+MAX_ITER = 1000
+XATOL = 0.0001
 N_EPOCH = 10
 N_QUBITS = 12
 
@@ -71,6 +72,7 @@ def optimize(cost_func, initial_weights):
     theta_opt = opt_result.x
     return theta_opt
 
+
 def state_phase(y):
     qpe = QPE()
     state_phase = qpe.predict_qp(y)
@@ -103,10 +105,13 @@ class QPE:
         qc = QuantumCircuit(qr, cr)
         
         # 位相推定したい状態
-        y_bin = format(y, '02b')
-        for i, y_i in enumerate(y_bin):
-            if y_i == "1":
-                qc.x(self.N_ENCODE+i)
+        try:
+            y_bin = format(y, '02b')
+            for i, y_i in enumerate(y_bin):
+                if y_i == "1":
+                    qc.x(self.N_ENCODE+i)
+        except:
+            pass
         
         qc.barrier()
         
@@ -121,16 +126,12 @@ class QPE:
                 qc.cp(theta, control_qubit=c, target_qubit=self.N_QUBITS-2)
             r *= 2
         
-        # print(qc)
-        
         qc.append(self.inverse_qft(self.N_QUBITS), qc.qubits[:self.N_QUBITS])
         
         qc.barrier()
         
         for i in range(self.N_ENCODE):
             qc.measure(i, i)
-        
-        # print(qc)
                 
         return qc, theta
     
@@ -162,52 +163,34 @@ class QPE:
 
 # メインの量子回路
 class SwapQNN:
-    def __init__(self, nqubits, simulator) -> None:
+    def __init__(self, nqubits, simulator):
         self.nqubits_train = nqubits
         self.simulator = simulator
         self.n_params = N_PARAMS
         
-        # self.state_phase = state_phase
-        
         self.x = ParameterVector('x', NUM_CLASS)
-        self.y = Parameter('y')
         self.weights = ParameterVector('weight', self.n_params)
         
-        self.u_in, _ = self.U_in()
-        
-    def U_in(self):
+    def U_in(self, y):
         qr = QuantumRegister(self.nqubits_train, 'qr')
         cr = ClassicalRegister(1, 'cr')
         qc = QuantumCircuit(qr, cr)
         
         # len(y_bin) == 2
-        print(self.y)
-        qc.rx(self.y*0, 0)
-        # y_bin = format(self.y, '02b')
         
-        # # encode for label
-        # for i, y in enumerate(y_bin):
-        #     if y == "1":
-        #         qc.x(i)
-        #         qc.x(i+7)
+        y_bin = format(y, '02b')
+        # encode for label
+        for i, y in enumerate(y_bin):
+            if y == "1":
+                qc.x(i)
+                qc.x(i+7)
 
-        if self.y == 2:
-            qc.x(1)
-            qc.x(1+7)
-        elif self.y == 3:
-            qc.x(0)
-            qc.x(7)
-        elif self.y == 4:
-            qc.x(0)
-            qc.x(1)
-            qc.x(7)
-            qc.x(8)
-        
-        
         # encode for input data
         for x in [self.x[i] for i in range(NUM_CLASS)]:
             angle_y = np.arcsin(x)
             angle_z = np.arccos(x*x)
+            
+            print('angle_y', angle_y)
             
             for i in range(5, 5+2):
                 qc.ry(angle_y, i)
@@ -244,8 +227,8 @@ class SwapQNN:
     def identity_interpret(self, x):
         return x
     
-    def qcl_pred(self):
-        qc, qr = self.U_in()
+    def qcl_pred(self, y):
+        qc, qr = self.U_in(y)
         qc = self.U_out(qc, qr)
         qc.measure(self.nqubits_train-1, 0)
         
@@ -313,14 +296,14 @@ class SwapQNN:
         
         return inst_rot
 
-    def paramed_ent_gate(self, qc, id_qubit, skip_id1, skip_id2):
+    def add_paramed_ent_gate(self, qc, id_qubit, skip_id1, skip_id2):
         qc.u(self.weights[id_qubit*12], self.weights[id_qubit*12+1], self.weights[id_qubit*12+2], id_qubit + skip_id1)
         qc.u(self.weights[id_qubit*12+3], self.weights[id_qubit*12+4], self.weights[id_qubit*12+5], id_qubit + skip_id2)
         qc.cx(id_qubit + skip_id1, id_qubit + skip_id2)
         qc.u(self.weights[id_qubit*12+6], self.weights[id_qubit*12+7], self.weights[id_qubit*12+8], id_qubit + skip_id1)
         qc.u(self.weights[id_qubit*12+9], self.weights[id_qubit*12+10], self.weights[id_qubit*12+11], id_qubit + skip_id2)
 
-    def paramed_gate(self, qc, id_qubit, skip_id):
+    def add_paramed_gate(self, qc, id_qubit, skip_id):
         qc.u(self.weights[id_qubit*12 + 12*3], self.weights[id_qubit*12+1 + 12*3], self.weights[id_qubit*12+2 + 12*3], id_qubit + skip_id)
         qc.u(self.weights[id_qubit*12+3 + 12*3], self.weights[id_qubit*12+4 + 12*3], self.weights[id_qubit*12+5 + 12*3], id_qubit + skip_id)
         qc.u(self.weights[id_qubit*12+6 + 12*3], self.weights[id_qubit*12+7 + 12*3], self.weights[id_qubit*12+8 + 12*3], id_qubit + skip_id)
@@ -337,19 +320,19 @@ class SwapQNN:
         for id_qubit in range(n_qubits-2):
             
             if id_qubit == 1:
-                self.paramed_ent_gate(para_ent_qc, id_qubit, 0, 2)
+                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 2)
             elif id_qubit == 2:
-                self.paramed_ent_gate(para_ent_qc, id_qubit, 1, 2)      
+                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 1, 2)      
             else:
-                self.paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
+                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
                 
             para_ent_qc.barrier()
         
         for id_qubit in range(n_qubits-1):
             if id_qubit < 2:
-                self.paramed_gate(para_ent_qc, id_qubit, 0)
+                self.add_paramed_gate(para_ent_qc, id_qubit, 0)
             else:
-                self.paramed_gate(para_ent_qc, id_qubit, 1)
+                self.add_paramed_gate(para_ent_qc, id_qubit, 1)
 
         # print(para_ent_qc)
         inst_paramed_gate = para_ent_qc.to_instruction()
@@ -375,9 +358,10 @@ class SwapQNN:
 
 # 評価用クラス
 class Evaluate:
-    def __init__(self, qnn, input_data) -> None:
+    def __init__(self, qnn, input_data):
         self.qnn = qnn
         self.input_data = input_data
+        self.counts = 0
   
     # 最適化計算
     def optimize(self, initial_weights):    
@@ -387,10 +371,15 @@ class Evaluate:
         return theta_opt
     
     def cost_func(self, weights):
+        self.counts += 1
         # 測定
         print("self.input_data",self.input_data)
+        print("weights", weights)
+        print(len(weights))
+        print(self.counts)
         probabilities = self.qnn.forward(input_data=self.input_data, weights=weights)
         # コスト関数
+        print("probabilities", probabilities)
         LOSS = np.sum(probabilities[:, 1])
         print("LOSS", LOSS)
         
@@ -405,7 +394,7 @@ class Evaluate:
     def predict(self, input_data, optimized_weights):
         innerproducts = np.array([])
         for y in range(NUM_CLASS):
-            probabilities = self.qnn.forward(input_data=input_data, weithts=optimized_weights)
+            probabilities = self.qnn.forward(input_data=input_data, weights=optimized_weights)
             LOSS = np.sum(probabilities[:, 1])
             innerproducts = np.append(innerproducts, 1-LOSS)
         
@@ -457,7 +446,6 @@ if __name__ == "__main__":
     
     # 全体の量子回路
     swapqnn = SwapQNN(nqubits=N_QUBITS, simulator=simulator)
-    qc = swapqnn.qcl_pred()
     
     initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
     optimized_weight = initial_weights
@@ -475,13 +463,21 @@ if __name__ == "__main__":
             print("x", x)
             print('y', y)
             
-            print(swapqnn.u_in.parameters)
-            input_data = np.append(x, y)
+            u_in, _ = swapqnn.U_in(y)
+            print(u_in.parameters)
+            
+            # input_data = np.append(x, y)
+            input_data = x
+            
             print("input_data", input_data)
+            
+            qc = swapqnn.qcl_pred(y)
+            
+            print(qc)
             
             qnn = SamplerQNN(
                 circuit=qc,
-                input_params=swapqnn.u_in.parameters,
+                input_params=u_in.parameters,
                 weight_params=swapqnn.weights,
                 interpret=identity_interpret,
                 output_shape=2,
@@ -489,16 +485,11 @@ if __name__ == "__main__":
             
             evaluate = Evaluate(qnn, input_data)
             
+            # 最適化
+            optimized_weight = evaluate.minimize(optimized_weight)
             print('pass')
             
-            optimized_weight = evaluate.minimize(optimized_weight)
-            
-            accuracy_score = evaluate.accuracy(X_test, y_test, evaluate.predict(input_data=input_data, optimized_weights=optimized_weight))
-
-
-            # 最適化
-            optimized_weight = qc.minimization(initial_theta)
-
-
             # 推論
-            predicted_accuracy = qc.accuracy(X_test, y_test, optimized_weight)
+            accuracy_score = evaluate.accuracy(X_test, y_test, evaluate.predict(input_data=input_data, optimized_weights=optimized_weight))
+            
+            
