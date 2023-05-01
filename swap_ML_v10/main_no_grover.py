@@ -25,7 +25,7 @@ DATA_SIZE = 100
 N_PARAMS = 12*3
 MAX_ITER = 200
 N_EPOCH = 10
-N_QUBITS = 12
+N_QUBITS = 9
 LEARNING_RATE = 0.001
 
 OPTIM_STEPS = 100
@@ -63,6 +63,8 @@ def datasets(num_class, num_feachers, data_size):
     # shaffle datasets
     df = df.sample(frac=1, ignore_index=True)
     
+    # print(df)
+    
     return df
 
 
@@ -76,94 +78,6 @@ def optimize(cost_func, initial_weights):
     theta_opt = opt_result.x
     return theta_opt
 
-def state_phase(y):
-    qpe = QPE()
-    state_phase = qpe.predict_qp(y)
-    return state_phase * 2 * np.pi
-
-# 位相推定アルゴリズム
-class QPE:
-    def __init__(self):
-        # 第1レジスタのビット数
-        self.N_ENCODE = 10
-        # 第2レジスタのビット数
-        self.N_EIGEN_STATE = 2
-        
-        self.N_QUBITS = self.N_ENCODE + self.N_EIGEN_STATE
-        
-        self.simulator = AerSimulator(device='GPU')
-        self.nshots = 10000
-    
-    # 逆フーリエ変換
-    def inverse_qft(self, n):
-        qft = QFT(n)
-        inv_qft = qft.inverse()
-        
-        return inv_qft
-    
-    def qpe(self, y):
-        
-        qr = QuantumRegister(self.N_QUBITS)
-        cr = ClassicalRegister(self.N_ENCODE)
-        qc = QuantumCircuit(qr, cr)
-        
-        # 位相推定したい状態
-        y_bin = format(y, '02b')
-        for i, y_i in enumerate(y_bin):
-            if y_i == "1":
-                qc.x(self.N_ENCODE+i)
-        
-        qc.barrier()
-        
-        for i in range(self.N_ENCODE):
-            qc.h(i)
-        
-        theta = Parameter('θ')
-        r = 1
-        for c in range(self.N_ENCODE):
-            for i in range(r):
-                qc.cp(theta, control_qubit=c, target_qubit=self.N_QUBITS-1)
-                qc.cp(theta, control_qubit=c, target_qubit=self.N_QUBITS-2)
-            r *= 2
-        
-        # print(qc)
-        
-        qc.append(self.inverse_qft(self.N_QUBITS), qc.qubits[:self.N_QUBITS])
-        
-        qc.barrier()
-        
-        for i in range(self.N_ENCODE):
-            qc.measure(i, i)
-        
-        # print(qc)
-                
-        return qc, theta
-    
-    def predict_qp(self, y):
-        qc, theta = self.qpe(y)
-        
-        # 正解値 (θ=2*pi*φ)
-        np.random.seed(0)
-        phase = np.random.rand()
-        # 回路にパラメータを設定する
-        qc_para = qc.bind_parameters({theta: phase})
-        
-        compiled_circuit = transpile(qc_para, self.simulator)
-        qobj = assemble(compiled_circuit, shots=self.nshots)
-        results = self.simulator.run(qobj, shots=self.nshots).result()
-
-        answer = results.get_counts()
-        
-        # 測定された位相の算出
-        values = list(answer.values())
-        keys = list(answer.keys())
-        idx = np.argmax(list(values))
-        # keys[idx]が2進数としてintに変換
-        ans = int(keys[idx], 2)
-        phase_estimated = ans / (2**self.N_ENCODE)
-        
-        return phase_estimated        
-        
 
 # メインの量子回路
 class SwapQNN:
@@ -192,14 +106,14 @@ class SwapQNN:
         for i, y in enumerate(y_bin):
             if y == "1":
                 qc.x(i)
-                qc.x(i+7)
+                qc.x(i+4)
         
         # encode for input data
         for x in X:
             angle_y = np.arcsin(x)
             angle_z = np.arccos(x**2)
             
-            for i in range(5, 5+2):
+            for i in range(2, 2+2):
                 qc.ry(angle_y, i)
                 qc.rz(angle_z, i)
                 
@@ -211,23 +125,20 @@ class SwapQNN:
     # メインの量子回路
     def U_out(self, qc, qr):
         
-        qc.append(self.grover(), [qr[i] for i in range(5)])
+        # qc.append(self.grover(), [qr[i] for i in range(5)])
         # qc.append(self.classify_rot_gate(n_qubits=4, state_phase=self.state_phase), [qr[i] for i in [5, 6, 9, 10]])
-        qc.append(self.max_entanglement_gate(), [qr[i] for i in range(7, self.nqubits_train-1)])
-        qc.append(self.parametarized_qcl(), [qr[i] for i in range(2, 7)])
+        qc.append(self.max_entanglement_gate(), [qr[i] for i in range(4, self.nqubits_train-1)])
+        qc.append(self.parametarized_qcl(), [qr[i] for i in range(0, 4)])
         
         qc.h(self.nqubits_train-1)
         
         # swap test
         for id in range(4):
-            if id>=2:
-                qc.cswap(self.nqubits_train-1, self.nqubits_train-2-id, self.nqubits_train-7-id)
-            else:
-                qc.cswap(self.nqubits_train-1, self.nqubits_train-2-id, self.nqubits_train-6-id)
-        
+            qc.cswap(self.nqubits_train-1, self.nqubits_train-2-id, self.nqubits_train-6-id)
+
         qc.h(self.nqubits_train-1)
         
-        # qc.measure(self.nqubits_train-1, 0)
+        # print(qc)
         
         return qc
 
@@ -326,21 +237,25 @@ class SwapQNN:
 
     # パラメータ化量子回路
     def parametarized_qcl(self):
-        n_qubits = 5
+        n_qubits = 4
         
         para_ent_qr = QuantumRegister(n_qubits)
         para_ent_qc = QuantumCircuit(para_ent_qr, name="Parametarized Gate")
 
-        for id_qubit in range(n_qubits-2):
+        for id_qubit in range(n_qubits-1):
             
-            if id_qubit == 1:
-                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 2)
-            elif id_qubit == 2:
-                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 1, 2)      
-            else:
-                self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
+            self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
+            
+            # if id_qubit == 1:
+            #     self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 2)
+            # elif id_qubit == 2:
+            #     self.add_paramed_ent_gate(para_ent_qc, id_qubit, 1, 2)      
+            # else:
+            #     self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
                 
             para_ent_qc.barrier()
+        
+        # print(para_ent_qc)
         
         # for id_qubit in range(n_qubits-1):
         #     if id_qubit < 2:
@@ -349,6 +264,7 @@ class SwapQNN:
         #         self.add_paramed_gate(para_ent_qc, id_qubit, 1)
 
         # print(para_ent_qc)
+        
         inst_paramed_gate = para_ent_qc.to_instruction()
         
         return inst_paramed_gate
@@ -414,6 +330,7 @@ class SwapQNN:
     def predict(self, X_test, optimed_weight):
         innerproducts = np.array([])
         for y in range(NUM_CLASS):
+            LOSS = 0
             qnn = self.qcl_pred(X=X_test, y=y)
             probabilities = qnn.forward(input_data=None, weights=optimed_weight)
             LOSS = np.sum(probabilities[:, 1])
@@ -443,9 +360,9 @@ class SwapQNN:
         
         accuracy = accuracy_score(y_test, y_pred)
         
-        # graph_accuracy(accuracy, title="Accuracy value against iteration")
+        graph_accuracy(accuracy, title="Accuracy value against iteration")
         
-        return accuracyi4
+        return accuracy
 
 def graph_loss(loss, y, title):
     fig1, ax1 = plt.subplots()
@@ -511,8 +428,8 @@ if __name__ == "__main__":
     loss_point = []
     y_list = []
     
-    FIG_NAME_LOSS = 'fig_v1/graph_loss.jpeg'
-    FIG_NAME_ACCURACY = 'fig_v1/graph_accuracy.jpeg'
+    FIG_NAME_LOSS = 'fig_v3/graph_loss.jpeg'
+    FIG_NAME_ACCURACY = 'fig_v3/graph_accuracy.jpeg'
     
     if NUM_CLASS <= 4:
         
@@ -538,7 +455,6 @@ if __name__ == "__main__":
             # SamplerQNNをモデルの外で定義する
             
             for x, y in zip(X_train, y_train):      
-                # phase = state_phase(y-1)
                 print("x", x)
                 print('y', y)
                 # print('phase', phase)
@@ -553,7 +469,7 @@ if __name__ == "__main__":
                 print("LOSS", qc.cost_func(optimized_weight))
                 
                 
-                # graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
+                graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
                 
                 # print("gradients",qc.calc_gradient(optimized_weight))
                 
