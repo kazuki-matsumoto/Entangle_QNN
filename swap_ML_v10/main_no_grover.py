@@ -22,7 +22,7 @@ NUM_CLASS = 4
 NUM_FEATCHERS = 4
 DATA_SIZE = 100
 # N_PARAMS = 12*3 + 12*4
-N_PARAMS = 12*3
+N_PARAMS = 12*3 + 4
 MAX_ITER = 200
 N_EPOCH = 10
 N_QUBITS = 9
@@ -106,6 +106,8 @@ class SwapQNN:
                 qc.x(i)
                 qc.x(i+4)
         
+        qc.append(self.label_param(2), [qr[4], qr[5]])
+        
         # encode for input data
         for x in X:
             angle_y = np.arcsin(x)
@@ -135,8 +137,6 @@ class SwapQNN:
             qc.cswap(self.nqubits_train-1, self.nqubits_train-2-id, self.nqubits_train-6-id)
 
         qc.h(self.nqubits_train-1)
-        
-        # print(qc)
         
         return qc
 
@@ -231,6 +231,19 @@ class SwapQNN:
         qc.u(self.weights[id_qubit*12+6 + 12*3], self.weights[id_qubit*12+7 + 12*3], self.weights[id_qubit*12+8 + 12*3], id_qubit + skip_id)
         qc.u(self.weights[id_qubit*12+9 + 12*3], self.weights[id_qubit*12+10 + 12*3], self.weights[id_qubit*12+11 + 12*3], id_qubit + skip_id)
 
+    def label_param(self, n_qubits):
+        label_para_qr = QuantumRegister(n_qubits)
+        label_para_qc = QuantumCircuit(label_para_qr, name='Label Params Gate')
+        
+        # パラメータ化回転ゲート
+        for i in range(2):
+            label_para_qc.rz(self.weights[12*3 + i*2], i)
+            label_para_qc.ry(self.weights[12*3 + i*2+1], i)
+        
+        inst_qc = label_para_qc.to_instruction()
+        
+        return inst_qc
+
 
     # パラメータ化量子回路
     def parametarized_qcl(self):
@@ -260,9 +273,7 @@ class SwapQNN:
         
         for i in range(n_qubits-1):
             max_ent_qc.cx(i, i+1)
-        
         inst_max_ent = max_ent_qc.to_instruction()
-        
         return inst_max_ent
     
     # コスト関数を計算
@@ -408,8 +419,8 @@ if __name__ == "__main__":
     loss_point = []
     y_list = []
     
-    FIG_NAME_LOSS = 'fig_v3/graph_loss.jpeg'
-    FIG_NAME_ACCURACY = 'fig_v3/graph_accuracy.jpeg'
+    FIG_NAME_LOSS = 'fig_v4/graph_loss.jpeg'
+    FIG_NAME_ACCURACY = 'fig_v4/graph_accuracy.jpeg'
     
     if NUM_CLASS <= 4:
         
