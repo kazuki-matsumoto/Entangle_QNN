@@ -81,7 +81,7 @@ def optimize(cost_func, initial_weights):
 
 # メインの量子回路
 class SwapQNN:
-    def __init__(self, nqubits, simulator, nshots, X_train: list, y_train: int, state_phase=None):
+    def __init__(self, nqubits, simulator, nshots, X_train: list, y_train: int):
         self.nqubits_train = nqubits
         self.simulator = simulator
         self.nshots = nshots
@@ -91,8 +91,6 @@ class SwapQNN:
         self.y_train = y_train
         
         self.weights = ParameterVector('weight', self.n_params)
-        
-        # self.state_phase = state_phase
         
     def U_in(self, X, y):
         qr = QuantumRegister(self.nqubits_train, 'qr')
@@ -158,7 +156,6 @@ class SwapQNN:
         )
         
         return qnn
-        
 
     def grover_diffusion(self):
         n_qubits = 2
@@ -246,24 +243,7 @@ class SwapQNN:
             
             self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
             
-            # if id_qubit == 1:
-            #     self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 2)
-            # elif id_qubit == 2:
-            #     self.add_paramed_ent_gate(para_ent_qc, id_qubit, 1, 2)      
-            # else:
-            #     self.add_paramed_ent_gate(para_ent_qc, id_qubit, 0, 1)
-                
             para_ent_qc.barrier()
-        
-        # print(para_ent_qc)
-        
-        # for id_qubit in range(n_qubits-1):
-        #     if id_qubit < 2:
-        #         self.add_paramed_gate(para_ent_qc, id_qubit, 0)
-        #     else:
-        #         self.add_paramed_gate(para_ent_qc, id_qubit, 1)
-
-        # print(para_ent_qc)
         
         inst_paramed_gate = para_ent_qc.to_instruction()
         

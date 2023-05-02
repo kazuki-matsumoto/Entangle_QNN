@@ -443,9 +443,9 @@ class SwapQNN:
         
         accuracy = accuracy_score(y_test, y_pred)
         
-        # graph_accuracy(accuracy, title="Accuracy value against iteration")
+        graph_accuracy(accuracy, title="Accuracy value against iteration")
         
-        return accuracyi4
+        return accuracy
 
 def graph_loss(loss, y, title):
     fig1, ax1 = plt.subplots()
@@ -511,8 +511,8 @@ if __name__ == "__main__":
     loss_point = []
     y_list = []
     
-    FIG_NAME_LOSS = 'fig_v1/graph_loss.jpeg'
-    FIG_NAME_ACCURACY = 'fig_v1/graph_accuracy.jpeg'
+    FIG_NAME_LOSS = 'fig_v3/graph_loss.jpeg'
+    FIG_NAME_ACCURACY = 'fig_v3/graph_accuracy.jpeg'
     
     if NUM_CLASS <= 4:
         
@@ -553,7 +553,7 @@ if __name__ == "__main__":
                 print("LOSS", qc.cost_func(optimized_weight))
                 
                 
-                # graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
+                graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
                 
                 # print("gradients",qc.calc_gradient(optimized_weight))
                 
