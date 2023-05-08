@@ -22,8 +22,8 @@ NUM_CLASS = 4
 NUM_FEATCHERS = 4
 DATA_SIZE = 100
 # N_PARAMS = 12*3 + 12*4
-N_PARAMS = 12*3 + 4
-MAX_ITER = 200
+N_PARAMS = 12*3
+MAX_ITER = 500
 N_EPOCH = 10
 N_QUBITS = 9
 LEARNING_RATE = 0.001
@@ -106,7 +106,7 @@ class SwapQNN:
                 qc.x(i)
                 qc.x(i+4)
         
-        qc.append(self.label_param(2), [qr[4], qr[5]])
+        # qc.append(self.label_param(2), [qr[4], qr[5]])
         
         # encode for input data
         for x in X:
@@ -119,6 +119,8 @@ class SwapQNN:
                 
                 qc.ry(angle_y, i+4)
                 qc.rz(angle_z, i+4)
+        
+        # print(qc)
         
         return qc, qr
     
@@ -246,7 +248,6 @@ class SwapQNN:
         
         return inst_qc
 
-
     # パラメータ化量子回路
     def parametarized_qcl(self):
         n_qubits = 4
@@ -328,6 +329,7 @@ class SwapQNN:
             qnn = self.qcl_pred(X=X_test, y=y)
             probabilities = qnn.forward(input_data=None, weights=optimed_weight)
             LOSS = np.sum(probabilities[:, 1])
+            # print("LOSS", LOSS)
             innerproducts = np.append(innerproducts, 1-LOSS)
         
         
@@ -348,7 +350,6 @@ class SwapQNN:
             count += 1
         
         print('y_pred', y_pred)
-            
         print("pred_dict :", pred_dict)
         print("accuracy_score :", accuracy_score(y_test, y_pred))
         
@@ -359,7 +360,7 @@ class SwapQNN:
         return accuracy
 
 class SwapQNN_pred():
-    def __init__(self, simulator, n_qubits) -> None:
+    def __init__(self, simulator, n_qubits):
         self.simulator = simulator
         self.n_qubits = n_qubits
         
@@ -506,8 +507,8 @@ if __name__ == "__main__":
     loss_point = []
     y_list = []
     
-    FIG_NAME_LOSS = 'fig_v4/graph_loss.jpeg'
-    FIG_NAME_ACCURACY = 'fig_v4/graph_accuracy.jpeg'
+    FIG_NAME_LOSS = 'fig_v1/graph_loss.jpeg'
+    FIG_NAME_ACCURACY = 'fig_v1/graph_accuracy.jpeg'
     
     if NUM_CLASS <= 4:
         
@@ -527,16 +528,10 @@ if __name__ == "__main__":
         for epoch in range(N_EPOCH):
             print("epoch : ", epoch+1)
             print("--------------------------------------------------------------------------------")
-
-            # ここでxとyをくっつけてシャッフル
-            # モデルを先に定義しておいて後で、xとyを入力
-            # SamplerQNNをモデルの外で定義する
             
-            for x, y in zip(X_train, y_train):      
+            for x, y in zip(X_train, y_train):
                 print("x", x)
                 print('y', y)
-                # print('phase', phase)
-                
                 
                 qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y-1)
                 
@@ -544,13 +539,21 @@ if __name__ == "__main__":
                 # optimized_weight = qc.minimization(optimized_weight)
                 optimized_weight = qc.update_weights(optimized_weight)
                 
-                print("LOSS", qc.cost_func(optimized_weight))
+                # print("LOSS", qc.cost_func(optimized_weight))
                 
-                
-                # graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
+                graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
                 
                 # print("gradients",qc.calc_gradient(optimized_weight))
                 
                 # 推論
-                # predicted_accuracy = qc.accuracy(X_test, y_test, optimized_weight)
-                qc_pred.accuracy(X_test, y_test, optimized_weight)
+                qc.accuracy(X_test, y_test, optimized_weight)
+                # qc_pred.accuracy(X_test, y_test, optimized_weight)
+                
+                
+                
+                
+                
+                
+                
+                
+                
