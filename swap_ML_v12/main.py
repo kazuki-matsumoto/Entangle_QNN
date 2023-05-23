@@ -16,7 +16,6 @@ from qiskit.circuit import ParameterVector
 from qiskit.utils import algorithm_globals
 from qiskit.algorithms.optimizers import COBYLA, ADAM
 import matplotlib.pyplot as plt
-from qiskit.quantum_info import partial_trace, entropy
 
 
 NUM_CLASS = 4
@@ -112,9 +111,7 @@ class SwapQNN:
             for i in range(2, 2+2):
                 qc.ry(angle_y, i)
                 qc.rz(angle_z, i)
-        
-        # print(qc)
-        
+
         return qc, qr
     
     # メインの量子回路
@@ -191,9 +188,10 @@ class SwapQNN:
         
         # コスト関数
         LOSS = 1 - entropy(reduced_state)
+        
         return LOSS
     
-    
+    # 間違ってるかも
     # 勾配計算
     def calc_gradient(self, params):
         grad = np.zeros_like(params)
@@ -205,15 +203,17 @@ class SwapQNN:
             shifted[i] -= np.pi
             backward = self.cost_func(shifted, self.x_train, self.y_train)
             
-            grad[i] = 0.5 * (forward - backward)
-
+            grad[i] = forward - backward
+        
+        print('grad', np.round(grad, 10))
+        
         return np.round(grad, 10)
     
     # パラメータ更新
-    def update_weights(self, weights):
+    def update_weights(self, weights, lr):
         grad = self.calc_gradient(weights)
         # print("grad", grad)
-        updated_weights = weights - grad
+        updated_weights = weights - lr * grad
         
         return updated_weights
         
@@ -224,11 +224,11 @@ class SwapQNN:
         for y in range(NUM_CLASS):
             
             LOSS = self.cost_func(optimed_weight, X=x_test, y=y)
-            # print("LOSS", LOSS)
+            print("y, LOSS", y, LOSS)
             entropies = np.append(entropies, 1-LOSS)
-         
+        
         print("entropies", entropies)
-         
+        
         return np.argmax(entropies) + 1
 
 
@@ -348,15 +348,15 @@ if __name__ == "__main__":
                 
                 # 最適化
                 # optimized_weight = qc.minimization(optimized_weight)
-                optimized_weight = qc.update_weights(optimized_weight)
+                optimized_weight = qc.update_weights(optimized_weight, lr=0.01)
                 print("optimized_weight", optimized_weight)
                 # graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
                 
                 # print("gradients",qc.calc_gradient(optimized_weight))
-                
-                # 推論
-                qc.accuracy(X_test, y_test, optimized_weight)
-                # qc_pred.accuracy(X_test, y_test, optimized_weight)
+            
+            # 推論
+            qc.accuracy(X_test, y_test, optimized_weight)
+            # qc_pred.accuracy(X_test, y_test, optimized_weight)
                 
                 
                 
