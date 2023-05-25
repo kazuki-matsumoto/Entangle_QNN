@@ -45,6 +45,7 @@ def datasets(num_class, num_feachers, data_size):
     X_df = pd.DataFrame(data=X, columns=forest.feature_names[:num_feachers])
     y = forest.target
     y_df = pd.DataFrame(data=y, columns=['target'])
+    print(type(y))
 
     df = pd.concat([X_df, y_df], axis=1)
     df = df[df['target'] <= num_class]
@@ -60,24 +61,22 @@ def datasets(num_class, num_feachers, data_size):
         df_dict[name] = df_dict[name].iloc[range(int(data_size / 4)), :]
     
     df = pd.concat([df_dict[n] for n in df['target'].unique()], ignore_index=True)
-    # shaffle datasets
-    df = df.sample(frac=1, ignore_index=True)
     
-    # print(df)
+    is_corrects = np.array([True]*data_size)
+    is_corrects_df = pd.DataFrame(data=is_corrects, columns=['is_correct'])
+    
+    df = pd.concat([df, is_corrects_df], axis=1)
+    
+    # shaffle datasets
+    
+    # df = df.sample(frac=1, ignore_index=True)
+    
+    print(df)
     
     return df
 
 
 ###############################################################
-
-def optimize(cost_func, initial_weights):
-    
-    opt = COBYLA(maxiter=MAX_ITER)
-    # opt = ADAM(maxiter=MAX_ITER)
-    opt_result = opt.minimize(cost_func, initial_weights)
-    theta_opt = opt_result.x
-    return theta_opt
-
 
 # メインの量子回路
 class SwapQNN:
@@ -279,42 +278,40 @@ class SwapQNN:
         inst_max_ent = max_ent_qc.to_instruction()
         return inst_max_ent
     
-    # コスト関数を計算
-    def cost_func(self, weights):
+    # コスト関数（正解ラベル）
+    def cost_func(self, weights, is_correct: bool):
 
         # 測定
         qnn = self.qcl_pred(self.x_train, self.y_train)
         probabilities = qnn.forward(input_data=None, weights=weights)        
         
-        # コスト関数
-        LOSS = np.sum(probabilities[:, 1])
-        # print("LOSS", LOSS)
+        if is_correct:
+            # コスト関数
+            LOSS = np.sum(probabilities[:, 1])
+            # print("LOSS", LOSS)
+        else:
+            LOSS = 1 - np.sum(probabilities[:, 1])
+
         return LOSS
     
     # 勾配計算
-    def calc_gradient(self, params):
+    def calc_gradient(self, params, is_correct):
         grad = np.zeros_like(params)
         for i in range(len(params)):
             shifted = params.copy()
             shifted[i] += np.pi/2
-            forward = self.cost_func(shifted)
+            forward = self.cost_func(shifted, is_correct)
             
             shifted[i] -= np.pi
-            backward = self.cost_func(shifted)
+            backward = self.cost_func(shifted, is_correct)
             
             grad[i] = 0.5 * (forward - backward)
         
         return np.round(grad, 10)
-            
-    
-    # 最適化計算
-    def minimization(self, weights: list):
-        theta_opt = optimize(self.cost_func, weights)
-        return theta_opt
     
     # パラメータ更新
-    def update_weights(self, weights):
-        grad = self.calc_gradient(weights)
+    def update_weights(self, weights, is_correct):
+        grad = self.calc_gradient(weights, is_correct)
         # print("grad", grad)
         updated_weights = weights - grad
         
@@ -441,7 +438,6 @@ class SwapQNN_pred():
         return accuracy
     
 
-
 def graph_loss(loss, y, title):
     fig1, ax1 = plt.subplots()
     loss_func_vals.append(loss)
@@ -521,6 +517,8 @@ if __name__ == "__main__":
             X, y, test_size=0.3, random_state=1
         )
         
+        y_list = list(set(y))
+        
         initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
         optimized_weight = initial_weights  
         
@@ -536,21 +534,16 @@ if __name__ == "__main__":
                 qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y-1)
                 
                 # 最適化
-                # optimized_weight = qc.minimization(optimized_weight)
                 optimized_weight = qc.update_weights(optimized_weight)
-                
-                # print("LOSS", qc.cost_func(optimized_weight))
                 
                 graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
                 
-                # print("gradients",qc.calc_gradient(optimized_weight))
-                
                 # 推論
                 qc.accuracy(X_test, y_test, optimized_weight)
-                # qc_pred.accuracy(X_test, y_test, optimized_weight)
-                
-                
-                
+
+
+
+  
                 
                 
                 
