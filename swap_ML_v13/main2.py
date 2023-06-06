@@ -5,7 +5,6 @@ from qiskit.circuit import Parameter
 from qiskit_aer import AerSimulator
 from qiskit.circuit.library import QFT
 from sklearn.datasets import fetch_covtype
-from sklearn.model_selection import train_test_split
 import pandas as pd
 import numpy as np
 from qiskit.quantum_info import partial_trace, entropy
@@ -20,6 +19,7 @@ import copy
 from pathlib import Path
 
 
+
 NUM_CLASS = 4
 NUM_FEATCHERS = 4
 DATA_SIZE = 100
@@ -29,11 +29,12 @@ MAX_ITER = 500
 N_EPOCH = 10
 N_QUBITS = 9
 LEARNING_RATE = 0.001
+BLOCK_SIZE = 4
 
 OPTIM_STEPS = 100
 
 # Set seed for random generators
-algorithm_globals.random_seed = 0
+algorithm_globals.random_seed = 10
 
 
 ###############################################################
@@ -109,7 +110,7 @@ def datasets(num_class, num_features, data_size):
 
 # メインの量子回路
 class SwapQNN:
-    def __init__(self, nqubits, simulator, nshots, X_train: list, y_train: int):
+    def __init__(self, nqubits, simulator, nshots, X_train: list, y_train: int, y_mixed_train: list):
         self.nqubits_train = nqubits
         self.simulator = simulator
         self.nshots = nshots
@@ -117,6 +118,7 @@ class SwapQNN:
         
         self.x_train = X_train
         self.y_train = y_train
+        self.y_mixed_train = y_mixed_train
         
         self.weights = ParameterVector('weight', self.n_params)
         
@@ -125,16 +127,15 @@ class SwapQNN:
         cr = ClassicalRegister(1, 'cr')
         qc = QuantumCircuit(qr, cr)
         
-        # len(y_bin) == 2
-        y_bin = format(y, '02b')
-        
+        index_y = np.argmax(y)
+        # print("index_y", index_y)
+        # print("format(index_y, '02b')", format(index_y, '02b'))
+
         # encode for label
-        for i, y in enumerate(y_bin):
-            if y == "1":
+        for i, y_i in enumerate(format(index_y, '02b')):
+            if y_i == "1":
                 qc.x(i)
                 qc.x(i+4)
-        
-        # qc.append(self.label_param(2), [qr[4], qr[5]])
         
         # encode for input data
         for x in X:
@@ -147,8 +148,6 @@ class SwapQNN:
                 
                 qc.ry(angle_y, i+4)
                 qc.rz(angle_z, i+4)
-        
-        # print(qc)
         
         return qc, qr
     
@@ -308,79 +307,99 @@ class SwapQNN:
         return inst_max_ent
     
     # コスト関数（正解ラベル）
-    def cost_func(self, weights, is_correct: bool):
-
+    def cost_func(self, weights):
+        
+        innerproducts = np.zeros(BLOCK_SIZE)
+        losses = np.zeros(BLOCK_SIZE)
+        
         # 測定
-        qnn = self.qcl_pred(self.x_train, self.y_train)
-        probabilities = qnn.forward(input_data=None, weights=weights)        
+        for i, (x, y_mixed) in enumerate(zip(self.x_train, self.y_mixed_train)):
+            
+            # print('x', x)
+            # ----------------------------------------ここを修正---------------------------------------------------
+            # yに不正解のラベルが含まれていない
+            # print('y', y_mixed)
+            
+            qnn = self.qcl_pred(x, y_mixed)
+            probabilities = qnn.forward(input_data=None, weights=weights)        
+            # print('probabilities', probabilities)
+            
+            # 0 <= np.sum(probabilities[:, 1]) <= 0.5
+            innerproducts[i] = np.sum(probabilities[:, 1])      
+            # print('innerproducts', innerproducts)
+            
+        softmaxed_innerproducts = softmax(innerproducts)
+        print("softmaxed_innerproducts", softmaxed_innerproducts)
         
-        # 0 <= np.sum(probabilities[:, 1]) <= 0.5
+        # 2乗和誤差
+        LOSS = 0.5 * np.sum((softmaxed_innerproducts - self.y_train)**2)
+        # クロスエントロピー誤差
+        # delta = 1e-7
+        # print('innerproducts', innerproducts)
+        # LOSS = - np.sum(self.y_train * np.log(softmaxed_innerproducts + delta))
         
-        # コスト関数
-        if is_correct:
-            LOSS = (1 - np.sum(probabilities[:, 1]) - 0.5) * 2
-        else:
-            LOSS = (np.sum(probabilities[:, 1])) * 2
-
+        print('self.y_train', self.y_train)
+        print("LOSS", LOSS)
+        
         return LOSS
     
     # 勾配計算
-    def calc_gradient(self, params, is_correct):
+    def calc_gradient(self, params):
         grad = np.zeros_like(params)
+        
         for i in range(len(params)):
             shifted = params.copy()
             shifted[i] += np.pi/2
-            forward = self.cost_func(shifted, is_correct)
+            forward = self.cost_func(shifted)
+            # print("forward", forward)
             
             shifted[i] -= np.pi
-            backward = self.cost_func(shifted, is_correct)
+            backward = self.cost_func(shifted)
+            # print("backward", backward)
             
             grad[i] = 0.5 * (forward - backward)
         
         return np.round(grad, 10)
+        
     
     # パラメータ更新
-    def update_weights(self, weights, is_correct):
-        lr = 1E-2
+    def update_weights(self, weights):
+        lr = 0.01
         
-        grad = self.calc_gradient(weights, is_correct)
-        # print("grad", grad)
+        grad = self.calc_gradient(weights)
+        print("grad", grad)
+        print("weights", weights)
         updated_weights = weights - lr * grad
         
         return updated_weights
     
-    def predict(self, X_test, optimed_weight, is_correct: bool):
+    def predict(self, x_test, optimed_weight):
         innerproducts = np.array([])
         
         for y in range(NUM_CLASS):
-            qnn = self.qcl_pred(X=X_test, y=y)
+            qnn = self.qcl_pred(X=x_test, y=y)
             probabilities = qnn.forward(input_data=None, weights=optimed_weight)
-            
+            # print("probabilities", probabilities)
             innerproducts = np.append(innerproducts, np.sum(probabilities[:, 1]))
         
         print("innerproducts", innerproducts)
         
         return np.argmax(innerproducts) + 1
 
-    def accuracy(self, X_test, y_test, optimed_weight, is_correct_test: bool):
+    def accuracy(self, X_test, y_test, optimed_weight):
         pred_dict = {}
         y_pred = np.array([])
-        count = 0
-        for x, y, is_correct in zip(X_test, y_test, is_correct_test):
-            predicted = self.predict(X_test=x, optimed_weight=optimed_weight, is_correct=is_correct)
+        
+        for x in X_test:
+
+            predicted = self.predict(x_test=x, optimed_weight=optimed_weight)
             y_pred = np.append(y_pred, predicted)
-            pred_dict['ans{0} is {1}'.format(count, y)] = "pred{0} is {1}".format(count, predicted)
-            
-            count += 1
         
-        print('y_pred', y_pred)
+        # print('y_pred', y_pred)
         # print('y_pred.shape', y_pred.shape)
-        # print('type(y_pred)', type(y_pred))
-        print('y_test', y_test)
+        # print('y_test', y_test)
         # print('y_test.shape', y_test.shape)
-        # print('type(y_test)', type(y_test))
-        
-        # print("pred_dict :", pred_dict)
+
         print("accuracy_score :", accuracy_score(list(y_test), list(y_pred)))
         
         accuracy = accuracy_score(list(y_test), list(y_pred))
@@ -389,32 +408,29 @@ class SwapQNN:
         
         return accuracy
 
+def softmax(x):
+    x = x - np.max(x, axis=0)
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
 
-def graph_loss(loss, y, title, is_correct):
+# ロスのグラフ（点は正解ラベル）
+def graph_loss(loss, y, title):
     fig1, ax1 = plt.subplots()
     
-    y_list.append(y)
-    
-    ax1.set_title(title+' ({})'.format(is_correct))
+    y_list.append(np.argmax(y) + 1)
+    print('y_list: ', y_list)
+
     ax1.set_xlabel("Iteration")
     ax1.set_ylabel("LOSS value")
     
-    if is_correct:
-        loss_func_vals_true.append(loss)
-        loss_point_list = [y_list, loss_func_vals_true]
-        ax1.plot(range(len(loss_func_vals_true)), loss_func_vals_true)
-        
-    else:
-        loss_func_vals_false.append(loss)
-        loss_point_list = [y_list, loss_func_vals_false]
-        ax1.plot(range(len(loss_func_vals_false)), loss_func_vals_false)
-
+    loss_func_vals.append(loss)
+    ax1.plot(range(len(loss_func_vals)), loss_func_vals)
+    
     cnt_1 = 0
     cnt_2 = 0
     cnt_3 = 0
     cnt_4 = 0
     
-    for (i, point), y in zip(enumerate(loss_point_list[-1]), y_list):
+    for (i, point), y in zip(enumerate(loss_func_vals), y_list):
         if y == 1:
             ax1.plot(i, point, '.', markersize=10, color='red', label='y={0}'.format(y) if cnt_1==0 else "")
             cnt_1 += 1
@@ -429,12 +445,7 @@ def graph_loss(loss, y, title, is_correct):
             cnt_4 += 1
     
     ax1.legend()
-    
-    if is_correct:
-        plt.savefig(FIG_NAME_LOSS_TRUE)
-    else:
-        plt.savefig(FIG_NAME_LOSS_FALSE)
-        
+    plt.savefig(FIG_NAME_LOSS)
     plt.close()
 
 
@@ -452,6 +463,30 @@ def save_file_at_dir(dir_path, filename, dataframe):
     os.makedirs(dir_path, exist_ok=True)
     dataframe.to_csv(dir_path+filename)
 
+def train_test_split(df, test_size, random_state):
+    np.random.seed(random_state)
+    
+    split_shape = 4
+    
+    blocks = [df[i:i+4] for i in range(0, len(df), 4)]
+    shuffuled_blocks = np.random.permutation(blocks)
+    flat_shuffled_blocks = shuffuled_blocks.reshape((-1, shuffuled_blocks.shape[-1]))
+    shuffled_df = pd.DataFrame(flat_shuffled_blocks, columns=df.columns)
+    
+    filepath = Path('dataframe/csv/shuffled_df.csv') 
+    filepath.parent.mkdir(parents=True, exist_ok=True) 
+    shuffled_df.to_csv(filepath)
+    
+    y = shuffled_df.loc[:, ['target', 'is_correct']].values
+    X = shuffled_df.drop('target', axis=1).values
+
+    X_train = X[:(int(len(X)*(1-test_size)) - int(len(X)*(1-test_size) % split_shape))]
+    X_test = X[(int(len(X)*(1-test_size)) - int(len(X)*(1-test_size) % split_shape)):]
+    y_train = y[:(int(len(y)*(1-test_size)) - int(len(y)*(1-test_size) % split_shape))]
+    y_test = y[(int(len(y)*(1-test_size)) - int(len(y)*(1-test_size) % split_shape)):]
+    
+    return X_train, X_test, y_train, y_test
+
 
 if __name__ == "__main__":
     # simlator
@@ -459,36 +494,39 @@ if __name__ == "__main__":
     # num shots
     nshots = 100000
     
-    loss_func_vals_true = []
-    loss_func_vals_false = []
+    loss_func_vals = []
     accuracy_vals = []
     
     loss_point = []
     y_list = []
     
-    FOLDER_PATH = 'fig_v8/'
-    FIG_NAME_LOSS_TRUE = FOLDER_PATH + 'graph_loss_true.jpeg'
-    FIG_NAME_LOSS_FALSE = FOLDER_PATH + 'graph_loss_false.jpeg'
+    FOLDER_PATH = 'fig_v11/'
+    FIG_NAME_LOSS = FOLDER_PATH + 'graph_loss.jpeg'
     FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy.jpeg'
     
     if NUM_CLASS <= 4:
         
         df_dict = {}
         df = datasets(NUM_CLASS, NUM_FEATCHERS, DATA_SIZE)
-        y = df["target"].values
-        X = df.drop('target', axis=1).values
-        
+
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=1
+            df, test_size=0.3, random_state=1
         )
+
+        y = df["target"].values
+        # y_list = list(set(y))
         
-        is_correct_train = X_train[:, -1]
-        is_correct_test = X_test[:, -1]
+        n_labels = len(np.unique(y))
+        y_train_mixed_onehot = np.eye(n_labels)[list(y_train[:, :-1].flatten() - 1)].reshape(int(y_train[:, :-1].flatten().shape[0]/BLOCK_SIZE), BLOCK_SIZE, -1)
         
-        X_train = X_train[:, :-1]
-        X_test = X_test[:, :-1]
+        y_train_tmp = copy.deepcopy(y_train)
+        y_train_tmp = y_train_tmp[y_train_tmp[:, -1] == True]
+        y_train_onehot = np.eye(n_labels)[list(y_train_tmp[:, :-1].flatten() - 1)]
+        y_test = y_test[y_test[:, -1] == True][:, :-1].flatten()
         
-        y_list = list(set(y))
+        X_train = X_train[:, :-1].reshape(int(X_train.shape[0]/BLOCK_SIZE), BLOCK_SIZE, -1)
+        X_test = X_test[X_test[:, -1] == True][:, :-1]
+
         
         initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
         optimized_weight = initial_weights
@@ -496,21 +534,21 @@ if __name__ == "__main__":
         # 学習
         for epoch in range(N_EPOCH):
             print("epoch : ", epoch+1)
-            print("--------------------------------------------------------------------------------")
+            print("---------------------------------- {} epoch ----------------------------------".format(epoch+1))
             
-            for x, y, is_correct in zip(X_train, y_train, is_correct_train):
+            for x, y, y_mixed in zip(X_train, y_train_onehot, y_train_mixed_onehot):
                 print("x", x)
                 print('y', y)
-                print('is_correct', is_correct)
-                
-                qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y-1)
+                print('y_mixed', y_mixed)
+ 
+                qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y, y_mixed_train=y_mixed)
                 
                 # 最適化
-                optimized_weight = qc.update_weights(optimized_weight, is_correct=is_correct)
+                optimized_weight = qc.update_weights(optimized_weight)
                 
-                graph_loss(qc.cost_func(optimized_weight, is_correct), y, title="Objective function value against iteration", is_correct=is_correct)
+                graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
                 
                 # 推論
-                qc.accuracy(X_test, y_test, optimized_weight, is_correct_test)
+                qc.accuracy(X_test, y_test, optimized_weight)
 
 
