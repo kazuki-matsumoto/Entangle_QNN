@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import copy
 from pathlib import Path
 
+# 学習したデータでそのままテスト
 
 
 DATA_NUM_QUBITS = 4
@@ -27,15 +28,15 @@ N_QUBITS = 2 * (DATA_NUM_QUBITS + CLASS_NUM_QUBITS) + ANCILLA_QUBITS
 
 NUM_CLASS = 4
 NUM_FEATCHERS = 4
-DATA_SIZE = 100
+DATA_SIZE = 20
 
 N_PARAMS = 12 * (DATA_NUM_QUBITS + CLASS_NUM_QUBITS - 1)
 N_EPOCH = 10
-LEARNING_RATE = 1
+LEARNING_RATE = 0.01
 BLOCK_SIZE = 4
 
 # Set seed for random generators
-algorithm_globals.random_seed = 1
+algorithm_globals.random_seed = 12
 DATA_SEED = 1
 
 
@@ -172,9 +173,15 @@ class SwapQNN:
         return x
     
     def qcl_pred(self, X, y):
+        
+        print("qcl_pred X", X)
+        print("qcl_pred y", y)
+        
         qc, qr = self.U_in(X, y)
         qc = self.U_out(qc, qr)
         qc.measure(self.nqubits-1, 0)
+        
+        # print(qc)
         
         qnn = SamplerQNN(
             circuit=qc,
@@ -315,18 +322,19 @@ class SwapQNN:
         
         # 測定
         for i, (x, y_mixed) in enumerate(zip(self.x_train, self.y_mixed_train)):
-        
+            
+            print("y_mixed", y_mixed)
+            
             qnn = self.qcl_pred(x, y_mixed)
             probabilities = qnn.forward(input_data=None, weights=weights)        
-            # print('cost probabilities', probabilities)
+            print('cost probabilities', probabilities)
             
             # 0 <= np.sum(probabilities[:, 1]) <= 0.5
             innerproducts[i] = np.sum(probabilities[:, 1])      
             # print('innerproducts', innerproducts)
             
         softmaxed_innerproducts = softmax(innerproducts)
-        
-        print('self.y_train', self.y_train)
+        print("softmaxed_innerproducts", softmaxed_innerproducts)
         
         # 2乗和誤差
         LOSS = 0.5 * np.sum((softmaxed_innerproducts - self.y_train)**2)
@@ -334,6 +342,9 @@ class SwapQNN:
         # delta = 1e-7
         # print('innerproducts', innerproducts)
         # LOSS = - np.sum(self.y_train * np.log(softmaxed_innerproducts + delta))
+        
+        
+        print("LOSS", LOSS)
         
         return LOSS
     
@@ -360,8 +371,8 @@ class SwapQNN:
     def update_weights(self, weights):
 
         grad = self.calc_gradient(weights)
-        print("grad", grad)
-        print("weights", weights)
+        # print("grad", grad)
+        # print("weights", weights)
         updated_weights = weights - LEARNING_RATE * grad
         
         return updated_weights
@@ -371,6 +382,9 @@ class SwapQNN:
         innerproducts = np.array([])
         
         print('----------------------------- predict -----------------------------')
+        
+        # ----------------------------- 要修正 -----------------------------
+        # ----------------------------- yが適用されていない -----------------------------
         
         test_classes = np.array(range(NUM_CLASS))
         
@@ -390,10 +404,11 @@ class SwapQNN:
         y_pred = np.array([])
         
         for x in X_test:
+            print('x_test', x)
             predicted = self.predict(x_test=x, optimed_weight=optimed_weight)
             y_pred = np.append(y_pred, predicted)
         
-        print('y_pred', y_pred)
+        # print('y_pred', y_pred)
         # print('y_pred.shape', y_pred.shape)
         # print('y_test', y_test)
         # print('y_test.shape', y_test.shape)
@@ -498,7 +513,7 @@ if __name__ == "__main__":
     loss_point = []
     y_list = []
     
-    FOLDER_PATH = 'fig_v16/'
+    FOLDER_PATH = 'fig_v14/'
     FIG_NAME_LOSS = FOLDER_PATH + 'graph_loss.jpeg'
     FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy.jpeg'
     
@@ -529,6 +544,7 @@ if __name__ == "__main__":
         
         X_train = X_train[:, :-1].reshape(int(X_train.shape[0]/BLOCK_SIZE), BLOCK_SIZE, -1)
         X_test = X_test[X_test[:, -1] == True][:, :-1]
+        print("X_test: ", X_test)
 
         
         initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
@@ -552,6 +568,7 @@ if __name__ == "__main__":
                 graph_loss(qc.cost_func(optimized_weight), y, title="Objective function value against iteration")
                 
                 # 推論
-                qc.accuracy(X_test, y_test, optimized_weight)
+                # qc.accuracy(X_test, y_test, optimized_weight)
+                qc.accuracy(x[0], y, optimized_weight)
 
 

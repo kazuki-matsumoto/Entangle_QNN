@@ -34,8 +34,10 @@ BLOCK_SIZE = 4
 OPTIM_STEPS = 100
 
 # Set seed for random generators
-algorithm_globals.random_seed = 10
+PARAMS_SEED = 20
+algorithm_globals.random_seed = PARAMS_SEED
 
+DATA_SEED = 1
 
 ###############################################################
 
@@ -500,9 +502,15 @@ if __name__ == "__main__":
     loss_point = []
     y_list = []
     
-    FOLDER_PATH = 'fig_v11/'
-    FIG_NAME_LOSS = FOLDER_PATH + 'graph_loss.jpeg'
-    FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy.jpeg'
+    FOLDER_PATH = 'fig_v12/params_'
+    
+    FIG_NAME_LOSS = FOLDER_PATH + 'graph_loss_seed_{}.jpeg'.format(DATA_SEED)
+    FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy_seed_{}.jpeg'.format(DATA_SEED)
+    
+    filepath_loss = Path(FIG_NAME_LOSS)
+    filepath_accuracy = Path(FIG_NAME_ACCURACY)
+    filepath_loss.parent.mkdir(parents=True, exist_ok=True)
+    filepath_accuracy.parent.mkdir(parents=True, exist_ok=True)
     
     if NUM_CLASS <= 4:
         
@@ -510,7 +518,7 @@ if __name__ == "__main__":
         df = datasets(NUM_CLASS, NUM_FEATCHERS, DATA_SIZE)
 
         X_train, X_test, y_train, y_test = train_test_split(
-            df, test_size=0.3, random_state=1
+            df, test_size=0.3, random_state=DATA_SEED
         )
 
         y = df["target"].values
