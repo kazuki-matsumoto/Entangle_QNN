@@ -1,0 +1,3 @@
+lr = 5
+params seed = 42
+loss = 2乗和誤差

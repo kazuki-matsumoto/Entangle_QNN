@@ -19,11 +19,10 @@ import copy
 from pathlib import Path
 
 
-
-DATA_NUM_QUBITS = 4
+DATA_NUM_QUBITS = 2
 CLASS_NUM_QUBITS = 2
-ANCILLA_QUBITS = 1
-N_QUBITS = 2 * (DATA_NUM_QUBITS + CLASS_NUM_QUBITS) + ANCILLA_QUBITS
+ANCILLA_NUM_QUBITS = 1
+N_QUBITS = 2 * (DATA_NUM_QUBITS + CLASS_NUM_QUBITS) + ANCILLA_NUM_QUBITS
 
 NUM_CLASS = 4
 NUM_FEATCHERS = 4
@@ -31,15 +30,14 @@ DATA_SIZE = 100
 
 N_PARAMS = 12 * (DATA_NUM_QUBITS + CLASS_NUM_QUBITS - 1)
 N_EPOCH = 10
-LEARNING_RATE = 5
+LEARNING_RATE = 1e-2
 BLOCK_SIZE = 4
 
 # Set seed for random generators
 algorithm_globals.random_seed = 42
 DATA_SEED = 1
 
-
-FOLDER_PATH = 'fig_v18/'
+FOLDER_PATH = ''
 FIG_NAME_LOSS = FOLDER_PATH + 'graph_loss.jpeg'
 FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy.jpeg'
 
@@ -147,14 +145,15 @@ class SwapQNN:
             angle_y = np.arcsin(x)
             angle_z = np.arccos(x**2)
             
-            qc.ry(angle_y, i + CLASS_NUM_QUBITS)
-            qc.rz(angle_z, i + CLASS_NUM_QUBITS)
-            
-            qc.ry(angle_y, i + 2*CLASS_NUM_QUBITS + DATA_NUM_QUBITS)
-            qc.rz(angle_z, i + 2*CLASS_NUM_QUBITS + DATA_NUM_QUBITS)
+            for i in range(CLASS_NUM_QUBITS, DATA_NUM_QUBITS + CLASS_NUM_QUBITS):
+                qc.ry(angle_y, i)
+                qc.rz(angle_z, i)
+                
+                qc.ry(angle_y, i + DATA_NUM_QUBITS + CLASS_NUM_QUBITS)
+                qc.rz(angle_z, i + DATA_NUM_QUBITS + CLASS_NUM_QUBITS)
         
-        print(qc)
-
+        # print(qc)
+        
         return qc, qr
     
     # メインの量子回路
@@ -191,68 +190,6 @@ class SwapQNN:
         )
         
         return qnn
-
-    def grover_diffusion(self):
-        n_qubits = 2
-        diffusion_qr = QuantumRegister(n_qubits)
-        diffusion_qc = QuantumCircuit(diffusion_qr, name='diffusion')
-        
-        diffusion_qc.h(range(0, 2))
-        diffusion_qc.x(range(0, 2))
-        diffusion_qc.h(1)
-        diffusion_qc.cx(0, 1)
-        diffusion_qc.h(1)
-        diffusion_qc.x(range(0, 2))
-        diffusion_qc.h(range(0, 2))
-        
-        # convert to a gate
-        inst_diff = diffusion_qc.to_instruction()
-        
-        return inst_diff
-    
-    def grover(self):
-        n_qubits = 5
-        grover_qr = QuantumRegister(n_qubits)
-        grover_qc = QuantumCircuit(grover_qr, name='Glover Gate')
-        
-        grover_qc.h(range(2, 4))
-        grover_qc.x(4)
-        grover_qc.h(4)
-        grover_qc.cx(1, 3)
-        grover_qc.cx(0, 2)
-        
-        grover_qc.barrier()
-        grover_qc.x(range(2, 4))
-        grover_qc.ccx(2, 3, 4)
-        grover_qc.x(range(2, 4))
-        grover_qc.barrier()
-        
-        grover_qc.cx(0, 2)
-        grover_qc.cx(1, 3)
-        
-        grover_qc.barrier()
-        
-        grover_qc.append(self.grover_diffusion(), [grover_qr[2], grover_qr[3]])
-        
-        # print(grover_qc)
-        
-        inst_grover = grover_qc.to_instruction()
-        
-        return inst_grover
-
-    # 分類回転ゲート
-    def classify_rot_gate(self, n_qubits, state_phase):
-    
-        rot_qr = QuantumRegister(n_qubits)
-        rot_qc = QuantumCircuit(rot_qr, name="Classify Rotation Gate")
-        
-        # 位相推定ゲートで角度を決める
-        rot_qc.ry(state_phase, rot_qr)
-        
-        inst_rot = rot_qc.to_instruction()
-        
-        return inst_rot
-
 
     def add_paramed_ent_gate(self, qc, id_qubit, skip_id1, skip_id2):
         qc.u(self.weights[id_qubit*12], self.weights[id_qubit*12+1], self.weights[id_qubit*12+2], id_qubit + skip_id1)
@@ -336,11 +273,11 @@ class SwapQNN:
         print('self.y_train', self.y_train)
         
         # 2乗和誤差
-        LOSS = 0.5 * np.sum((softmaxed_innerproducts - self.y_train)**2)
+        # LOSS = 0.5 * np.sum((softmaxed_innerproducts - self.y_train)**2)
         
         # クロスエントロピー誤差
-        # delta = 1e-7
-        # LOSS = - np.sum(self.y_train * np.log(softmaxed_innerproducts + delta))
+        delta = 1e-7
+        LOSS = - np.sum(self.y_train * np.log(softmaxed_innerproducts + delta))
         
         return LOSS
     

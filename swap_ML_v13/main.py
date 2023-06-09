@@ -33,8 +33,10 @@ LEARNING_RATE = 0.001
 OPTIM_STEPS = 100
 
 # Set seed for random generators
-algorithm_globals.random_seed = 0
+PARAMS_SEED = 1
+# algorithm_globals.random_seed = PARAMS_SEED
 
+DATA_SEED = 1
 
 ###############################################################
 
@@ -98,7 +100,7 @@ def datasets(num_class, num_features, data_size):
         tmp_mixed_df = tmp_mixed_df.sample(frac=1, ignore_index=True)
         mixed_df = pd.concat([mixed_df, tmp_mixed_df], ignore_index=True)
 
-    filepath = Path('dataframe/csv/mixed_df.csv') 
+    filepath = Path('fig_v4/dataframe/mixed_df.csv') 
     filepath.parent.mkdir(parents=True, exist_ok=True) 
     mixed_df.to_csv(filepath)
     
@@ -307,7 +309,7 @@ class SwapQNN:
         inst_max_ent = max_ent_qc.to_instruction()
         return inst_max_ent
     
-    # コスト関数（正解ラベル）
+    # コスト関数
     def cost_func(self, weights, is_correct: bool):
 
         # 測定
@@ -455,63 +457,151 @@ def save_file_at_dir(dir_path, filename, dataframe):
 
 
 if __name__ == "__main__":
-    # simlator
-    simulator = AerSimulator(device='GPU')
-    # num shots
-    nshots = 100000
     
-    loss_func_vals_true = []
-    loss_func_vals_false = []
-    accuracy_vals = []
+    for data_seed in [1, 10, 20, 30, 40, 50]:
     
-    loss_point = []
-    y_list = []
-    
-    FOLDER_PATH = 'fig_v8/'
-    FIG_NAME_LOSS_TRUE = FOLDER_PATH + 'graph_loss_true.jpeg'
-    FIG_NAME_LOSS_FALSE = FOLDER_PATH + 'graph_loss_false.jpeg'
-    FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy.jpeg'
-    
-    if NUM_CLASS <= 4:
+        # simlator
+        simulator = AerSimulator(device='GPU')
+        # num shots
+        nshots = 100000
         
-        df_dict = {}
-        df = datasets(NUM_CLASS, NUM_FEATCHERS, DATA_SIZE)
-        y = df["target"].values
-        X = df.drop('target', axis=1).values
+        # seed value for params
+        algorithm_globals.random_seed = PARAMS_SEED
         
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=1
-        )
+        loss_func_vals_true = []
+        loss_func_vals_false = []
+        accuracy_vals = []
         
-        is_correct_train = X_train[:, -1]
-        is_correct_test = X_test[:, -1]
+        loss_point = []
+        y_list = []
         
-        X_train = X_train[:, :-1]
-        X_test = X_test[:, :-1]
+        FOLDER_PATH = 'fig_v4/data_seed_{}/'.format(data_seed)
+        FIG_NAME_LOSS_TRUE = FOLDER_PATH + 'graph_loss_true_seed.jpeg'
+        FIG_NAME_LOSS_FALSE = FOLDER_PATH + 'graph_loss_false_seed.jpeg'
+        FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy_seed.jpeg'
         
-        y_list = list(set(y))
+        filepath_loss_true = Path(FIG_NAME_LOSS_TRUE)
+        filepath_loss_false = Path(FIG_NAME_LOSS_FALSE)
+        filepath_accuracy = Path(FIG_NAME_ACCURACY)
+        filepath_loss_true.parent.mkdir(parents=True, exist_ok=True)
+        filepath_loss_false.parent.mkdir(parents=True, exist_ok=True)
+        filepath_accuracy.parent.mkdir(parents=True, exist_ok=True)
         
-        initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
-        optimized_weight = initial_weights
         
-        # 学習
-        for epoch in range(N_EPOCH):
-            print("epoch : ", epoch+1)
-            print("--------------------------------------------------------------------------------")
+        if NUM_CLASS <= 4:
             
-            for x, y, is_correct in zip(X_train, y_train, is_correct_train):
-                print("x", x)
-                print('y', y)
-                print('is_correct', is_correct)
+            df_dict = {}
+            df = datasets(NUM_CLASS, NUM_FEATCHERS, DATA_SIZE)
+            y = df["target"].values
+            X = df.drop('target', axis=1).values
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state = data_seed
+            )
+            
+            is_correct_train = X_train[:, -1]
+            is_correct_test = X_test[:, -1]
+            
+            X_train = X_train[:, :-1]
+            X_test = X_test[:, :-1]
+            
+            y_list = list(set(y))
+            
+            initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
+            optimized_weight = initial_weights
+            
+            # 学習
+            for epoch in range(N_EPOCH):
+                print("epoch : ", epoch+1)
+                print("--------------------------------------------------------------------------------")
                 
-                qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y-1)
+                for x, y, is_correct in zip(X_train, y_train, is_correct_train):
+                    print("x", x)
+                    print('y', y)
+                    print('is_correct', is_correct)
+                    
+                    qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y-1)
+                    
+                    # 最適化
+                    optimized_weight = qc.update_weights(optimized_weight, is_correct=is_correct)
+                    
+                    graph_loss(qc.cost_func(optimized_weight, is_correct), y, title="Objective function value against iteration", is_correct=is_correct)
+                    
+                    # 推論
+                    qc.accuracy(X_test, y_test, optimized_weight, is_correct_test)
+        
+        
+        
+    for params_seed in [1, 10, 20, 30, 40, 50]:
+    
+        # simlator
+        simulator = AerSimulator(device='GPU')
+        # num shots
+        nshots = 100000
+        
+        # seed value for params
+        algorithm_globals.random_seed = params_seed
+        
+        loss_func_vals_true = []
+        loss_func_vals_false = []
+        accuracy_vals = []
+        
+        loss_point = []
+        y_list = []
+        
+        FOLDER_PATH = 'fig_v4/params_seed_{}/'.format(params_seed)
+        FIG_NAME_LOSS_TRUE = FOLDER_PATH + 'graph_loss_true_seed.jpeg'
+        FIG_NAME_LOSS_FALSE = FOLDER_PATH + 'graph_loss_false_seed.jpeg'
+        FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy_seed.jpeg'
+        
+        filepath_loss_true = Path(FIG_NAME_LOSS_TRUE)
+        filepath_loss_false = Path(FIG_NAME_LOSS_FALSE)
+        filepath_accuracy = Path(FIG_NAME_ACCURACY)
+        filepath_loss_true.parent.mkdir(parents=True, exist_ok=True)
+        filepath_loss_false.parent.mkdir(parents=True, exist_ok=True)
+        filepath_accuracy.parent.mkdir(parents=True, exist_ok=True)
+        
+        
+        if NUM_CLASS <= 4:
+            
+            df_dict = {}
+            df = datasets(NUM_CLASS, NUM_FEATCHERS, DATA_SIZE)
+            y = df["target"].values
+            X = df.drop('target', axis=1).values
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state = DATA_SEED
+            )
+            
+            is_correct_train = X_train[:, -1]
+            is_correct_test = X_test[:, -1]
+            
+            X_train = X_train[:, :-1]
+            X_test = X_test[:, :-1]
+            
+            y_list = list(set(y))
+            
+            initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
+            optimized_weight = initial_weights
+            
+            # 学習
+            for epoch in range(N_EPOCH):
+                print("epoch : ", epoch+1)
+                print("--------------------------------------------------------------------------------")
                 
-                # 最適化
-                optimized_weight = qc.update_weights(optimized_weight, is_correct=is_correct)
-                
-                graph_loss(qc.cost_func(optimized_weight, is_correct), y, title="Objective function value against iteration", is_correct=is_correct)
-                
-                # 推論
-                qc.accuracy(X_test, y_test, optimized_weight, is_correct_test)
+                for x, y, is_correct in zip(X_train, y_train, is_correct_train):
+                    print("x", x)
+                    print('y', y)
+                    print('is_correct', is_correct)
+                    
+                    qc = SwapQNN(nqubits=N_QUBITS, simulator=simulator, nshots=nshots, X_train=x, y_train=y-1)
+                    
+                    # 最適化
+                    optimized_weight = qc.update_weights(optimized_weight, is_correct=is_correct)
+                    
+                    graph_loss(qc.cost_func(optimized_weight, is_correct), y, title="Objective function value against iteration", is_correct=is_correct)
+                    
+                    # 推論
+                    qc.accuracy(X_test, y_test, optimized_weight, is_correct_test)
 
 
