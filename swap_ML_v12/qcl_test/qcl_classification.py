@@ -47,6 +47,8 @@ class QclClassification:
                 u.add_RY_gate(i, angle_y[1])
                 u.add_RZ_gate(i, angle_z[1])
         
+        print(u)
+        
         return u
 
     def set_input_state(self, x_list):

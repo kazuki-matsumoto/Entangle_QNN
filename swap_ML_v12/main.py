@@ -111,6 +111,7 @@ class SwapQNN:
             for i in range(2, 2+2):
                 qc.ry(angle_y, i)
                 qc.rz(angle_z, i)
+        
 
         return qc, qr
     

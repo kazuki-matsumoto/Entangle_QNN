@@ -38,7 +38,7 @@ BLOCK_SIZE = 4
 algorithm_globals.random_seed = 42
 DATA_SEED = 1
 
-FOLDER_PATH = 'fig_v3/'
+FOLDER_PATH = ''
 FIG_NAME_LOSS = FOLDER_PATH + 'graph_loss.jpeg'
 FIG_NAME_ACCURACY = FOLDER_PATH + 'graph_accuracy.jpeg'
 
@@ -141,7 +141,7 @@ class SwapQNN:
                 qc.x(i)
                 qc.x(i + DATA_NUM_QUBITS + CLASS_NUM_QUBITS)
         
-        # encode for input data
+        # encode for input data       
         for i, x in enumerate(X):
             angle_y = np.arcsin(x)
             angle_z = np.arccos(x**2)
@@ -407,9 +407,10 @@ def save_file_at_dir(dir_path, filename, dataframe):
     dataframe.to_csv(dir_path+filename)
 
 def train_test_split(df, test_size, random_state):
+    
     np.random.seed(random_state)
     
-    split_shape = 4
+    split_shape = BLOCK_SIZE
     
     blocks = [df[i:i+4] for i in range(0, len(df), 4)]
     shuffuled_blocks = np.random.permutation(blocks)
@@ -432,6 +433,7 @@ def train_test_split(df, test_size, random_state):
 
 
 if __name__ == "__main__":
+    
     # simlator
     simulator = AerSimulator(device='GPU')
     # num shots
@@ -456,6 +458,7 @@ if __name__ == "__main__":
         X_train, X_test, y_train, y_test = train_test_split(
             df, test_size=0.3, random_state=DATA_SEED
         )
+        
 
         y = df["target"].values
         # y_list = list(set(y))
@@ -471,6 +474,10 @@ if __name__ == "__main__":
         X_train = X_train[:, :-1].reshape(int(X_train.shape[0]/BLOCK_SIZE), BLOCK_SIZE, -1)
         X_test = X_test[X_test[:, -1] == True][:, :-1]
 
+        print('X_train', X_train)
+        print('X_test', X_test)
+        print('y_train', y_train)
+        print('y_test', y_test)
         
         initial_weights = 0.1 * (2 * algorithm_globals.random.random(N_PARAMS) - 1)
         optimized_weight = initial_weights
