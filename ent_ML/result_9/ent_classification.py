@@ -359,19 +359,19 @@ class QclClassification:
                 
                 print("Iteration count...")
                 
-                result = minimize(self.cost_func,
-                                self.theta,
-                                # method='Nelder-Mead',
-                                method='BFGS',
-                                jac=self.cost_func_grad,
-                                options={"maxiter":maxiter},
-                                callback=self.callbackF)
+                # result = minimize(self.cost_func,
+                #                 self.theta,
+                #                 # method='Nelder-Mead',
+                #                 method='BFGS',
+                #                 jac=self.cost_func_grad,
+                #                 options={"maxiter":maxiter},
+                #                 callback=self.callbackF)
                 
-                theta_opt = self.theta
                 
-                # self.theta = self.optimize_params(self.theta)
-                # self.callbackF(self.theta)
+                self.theta = self.optimize_params(self.theta)
+                self.callbackF(self.theta)
         
+                theta_opt = self.theta
         
         
         print('=========================================================')
@@ -382,7 +382,7 @@ class QclClassification:
         print(f"Final value of cost function:  {self.cost_func(self.theta):.4f}")
         print()
             
-        return result, theta_init, theta_opt
+        return theta_init, theta_opt
 
     def callbackF(self, theta):
         self.n_iter = self.n_iter + 1
