@@ -14,6 +14,7 @@ from qiskit.circuit import ParameterVector
 from qiskit.utils import algorithm_globals
 from qiskit.primitives import BackendEstimator
 from qiskit_aer import AerSimulator
+from qiskit.visualization import circuit_drawer
 
 
 class QclClassification:
@@ -170,11 +171,9 @@ class QclClassification:
             # u_out.add_gate(time_evol_gate)
             
             qc.append(self.parametarized_qcl(d), [qr[i] for i in range(0, self.class_nqubits + self.data_nqubits)])
-            
-            qc.barrier()
         
         qc.append(self.max_entanglement_gate(), [qr[i] for i in range(self.class_nqubits + self.data_nqubits, self.nqubit - 1)])
-            
+        
         # スワップテスト    
         qc.h(self.nqubit-1)
         for id in range(self.class_nqubits + self.data_nqubits):
@@ -193,6 +192,8 @@ class QclClassification:
         qc = self.U_out(qc, qr)
         qc.measure(self.nqubit-1, 0)
         
+        # circuit_drawer(qc, filename="quantum_circuit.png", output='mpl')
+
         return qc
     
     def update_params(self, qc, theta):
@@ -286,8 +287,8 @@ class QclClassification:
         
         grad = [np.sum(cost_grad_by_B * B_gr) for B_gr in B_gr_list]
         
-        print("grad:\n", grad)
-        print("len(grad):\n", len(grad))
+        # print("grad:\n", grad)
+        # print("len(grad):\n", len(grad))
         
         return np.array(grad)
     

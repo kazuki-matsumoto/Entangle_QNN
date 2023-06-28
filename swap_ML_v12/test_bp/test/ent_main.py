@@ -14,7 +14,7 @@ from qiskit.utils import algorithm_globals
 forest = datasets.fetch_covtype()
 
 # 量子回路のパラメータ
-C_DEPTH = 1 ## circuitの深さ（繰り返し回数）
+C_DEPTH = 2 ## circuitの深さ（繰り返し回数）
 NUM_CLASS = 4 ## 分類数（ここでは4つに分類）
 NUM_FEATCHERS = 4 ## 特徴量の次元
 DATA_SIZE = 100 ## 学習データのサイズ
@@ -36,7 +36,7 @@ FOLDER_PATH = f''
 FIG_NAME_LOSS = FOLDER_PATH + 'graph_loss.jpeg'
 FIG_NAME_GRAD = FOLDER_PATH + 'graph_grad.jpeg'
 
-NUM_EPOCHS = 2
+NUM_EPOCHS = 100
 
 # data sets
 def dataframe(dataset, num_class, num_features, data_size):

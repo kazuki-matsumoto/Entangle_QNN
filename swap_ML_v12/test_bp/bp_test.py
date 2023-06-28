@@ -18,6 +18,10 @@ from qiskit.providers.fake_provider import FakeAthens
 from qiskit.visualization import circuit_drawer
 
 
+mean_abs_grads = []
+std_abs_grads = []
+grads_x_label = []
+
 # 量子回路の定義
 def make_circuit(n_qubits, reps, thetas):
     ansatz = QuantumCircuit(n_qubits)
@@ -30,7 +34,8 @@ def make_circuit(n_qubits, reps, thetas):
             ansatz.cx(n_qubits-1, 0)
     
     ansatz.measure_all()
-    circuit_drawer(ansatz, filename="quantum_circuit.png", output='mpl')
+
+    # circuit_drawer(ansatz, filename="quantum_circuit.png", output='mpl')
     
     return ansatz
 
@@ -91,14 +96,39 @@ def do_experiment(n_qubits, n_epoch, reps=2):
     grads_list = []
     thetas = initial_weights[:]
     
-    for epoch in range(n_epoch):
+    for epoch in range(1, n_epoch + 1):
         qc = make_circuit(n_qubits, reps, thetas)
         ev = get_expectation_value(qc, n_qubits)
         expectation_values.append(ev)
         thetas, grads = update_thetas(n_qubits, reps, thetas)
         grads_list.append(grads)
+        
+        print('grad', grads)
+        
+        save_graph_grad(grads=np.array(grads), 
+                        filename='graph_grad.jpeg',
+                        n_iter=epoch,
+                        show_errorbar=False)
 
     return expectation_values, grads_list
+
+def save_graph_grad(grads, filename, n_iter, yscale_value='linear', show_errorbar=True):
+    
+    grads_x_label.append(n_iter)
+    mean_abs_grads.append(np.mean(abs(grads)))
+    std_abs_grads.append(np.std(abs(grads)))
+    
+    fig, ax = plt.subplots()
+    yerr = std_abs_grads if show_errorbar else None
+    ax.errorbar(x=grads_x_label, y=mean_abs_grads, yerr=yerr, fmt='-o', color='b')
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('mean abs grads')
+    ax.set_title('mean abs grads per each iter')
+    ax.set_yscale(yscale_value)
+    plt.grid()
+    plt.savefig(filename)
+    
+    plt.close()
 
 def plot_expectation_values(n_qubits, n_epoch, filename):
     expactation_values, _ = do_experiment(n_qubits, n_epoch=n_epoch)
@@ -119,7 +149,7 @@ def plot_expectation_values(n_qubits, n_epoch, filename):
     
     plt.title('Experiment {0} qubits'.format(n_qubits))
     
-    plt.savefig("test/{0}.png".format(filename))
+    plt.savefig("{0}.png".format(filename))
 
 
 def plot_graph(n_qubits2grads, filename, yscale_value='linear', show_errorbar=True):
@@ -142,21 +172,21 @@ def plot_graph(n_qubits2grads, filename, yscale_value='linear', show_errorbar=Tr
     ax.set_title('mean abs grads per each epoch')
     ax.set_yscale(yscale_value)
     plt.grid()
-    plt.savefig('test/{0}.png'.format(filename))
+    plt.savefig('{0}.png'.format(filename))
 
 
-for n_qubits in [1, 2, 6, 7, 8]:
-    n_epoch=100
-    filename = "{0}qubits_ev_vs_epoch".format(n_qubits)
-    plot_expectation_values(n_qubits, n_epoch, filename)
+# for n_qubits in [1, 2, 6, 7, 8]:
+#     n_epoch=100
+#     filename = "{0}qubits_ev_vs_epoch".format(n_qubits)
+#     plot_expectation_values(n_qubits, n_epoch, filename)
 
 n_qubits2grads = {}
 
-for n_qubit in range(1, 25+1):
-    expactation_values, grads_list = do_experiment(n_qubit, n_epoch=10)
+for n_qubit in [9]:
+    expactation_values, grads_list = do_experiment(n_qubit, n_epoch=100)
     n_qubits2grads[n_qubit] = grads_list[:10]
     
     print("n_qubits2grads", n_qubits2grads)
 
-plot_graph(n_qubits2grads, yscale_value='linear', filename='n_qubits2grads_linear')
-plot_graph(n_qubits2grads, yscale_value='log', filename='n_qubits2grads_log')
+# plot_graph(n_qubits2grads, yscale_value='linear', filename='n_qubits2grads_linear')
+# plot_graph(n_qubits2grads, yscale_value='log', filename='n_qubits2grads_log')
